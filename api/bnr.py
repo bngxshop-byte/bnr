@@ -89,32 +89,36 @@ def generate_avatar_only():
     if not uid:
         return "يرجى تحديد UID", 400
 
-    # جلب معلومات اللاعب (توافق الرد الجديد مع القديم)
+    # جلب معلومات اللاعب من API الجديد
     try:
-        api_url = f"https://info-eight-rho.vercel.app/accinfo?uid={uid}&region=IND"
+        api_url = f"https://info-plum-six.vercel.app/get?uid={uid}"
         res = requests.get(api_url, timeout=5)
         res.raise_for_status()
         data = res.json()
 
-        basic = data.get("basicInfo", {})
-        profile = data.get("profileInfo", {})
+        # استخراج البيانات من الهيكل الجديد
+        captain_info = data.get("captainBasicInfo", {})
+        account_info = data.get("AccountInfo", {})
+        
+        # استخدام captainBasicInfo أولاً، ثم AccountInfo كبديل
+        nickname = captain_info.get("nickname") or account_info.get("AccountName", "Unknown")
+        likes = captain_info.get("liked") or account_info.get("AccountLikes", 0)
+        level = captain_info.get("level") or account_info.get("AccountLevel", 0)
+        avatar_id = captain_info.get("headPic") or account_info.get("AccountAvatarId")
+        
+        # إذا لم نجد avatar_id، نحاول من مصادر أخرى
+        if not avatar_id:
+            profile_info = data.get("AccountProfileInfo", {})
+            # قد تكون الصورة في مكان آخر، نستخدم قيمة افتراضية
+            avatar_id = 902000110  # قيمة افتراضية
 
-        account_info = {
-            "AccountName": basic.get("nickname", "Unknown"),
-            "AccountLikes": basic.get("liked", 0),
-            "AccountLevel": basic.get("level", 0),
-            "AccountAvatarId": profile.get("avatarId"),
-            "AccountBannerId": basic.get("bannerId")
-        }
-
-        nickname = account_info.get("AccountName", "Unknown")
-        likes = account_info.get("AccountLikes", 0)
-        level = account_info.get("AccountLevel", 0)
-        avatar_id = account_info.get("AccountAvatarId")
+        # استخدام uid من البيانات إذا كان متاحاً
+        player_uid = captain_info.get("accountId") or uid
 
     except Exception as e:
         return f"❌ فشل في جلب البيانات: {e}", 500
 
+    # تحميل صورة الخلفية
     bg_img = fetch_image("https://i.postimg.cc/L4PQBgmx/IMG-20250807-042134-670.jpg")
     if not bg_img:
         return "❌ فشل في تحميل الخلفية", 500
@@ -123,13 +127,14 @@ def generate_avatar_only():
     draw = ImageDraw.Draw(img)
 
     # عرض الصورة الرمزية (Avatar)
-    avatar_img = fetch_image(
-        f"https://pika-ffitmes-api.vercel.app/?item_id={avatar_id}&watermark=TaitanApi&key=PikaApis",
-        AVATAR_SIZE
-    )
-    avatar_x, avatar_y = 90, 82
-    if avatar_img:
-        img.paste(avatar_img, (avatar_x, avatar_y), avatar_img)
+    if avatar_id:
+        avatar_img = fetch_image(
+            f"https://pika-ffitmes-api.vercel.app/?item_id={avatar_id}&watermark=TaitanApi&key=PikaApis",
+            AVATAR_SIZE
+        )
+        avatar_x, avatar_y = 90, 82
+        if avatar_img:
+            img.paste(avatar_img, (avatar_x, avatar_y), avatar_img)
 
     # رسم المستوى
     level_text = f"Lv. {level}"
@@ -143,13 +148,13 @@ def generate_avatar_only():
     smart_draw_text(draw, (nickname_x, nickname_y), nickname, fonts, 50, "black")
 
     # رسم UID
-    bbox_uid = fonts["primary"][35].getbbox(uid)
+    bbox_uid = fonts["primary"][35].getbbox(player_uid)
     text_w = bbox_uid[2] - bbox_uid[0]
     text_h = bbox_uid[3] - bbox_uid[1]
     img_w, img_h = img.size
     text_x = img_w - text_w - 110
     text_y = img_h - text_h - 17
-    smart_draw_text(draw, (text_x, text_y), uid, fonts, 35, "white")
+    smart_draw_text(draw, (text_x, text_y), player_uid, fonts, 35, "white")
 
     # رسم عدد الإعجابات
     likes_text = f"{likes}"
@@ -173,6 +178,36 @@ def generate_avatar_only():
     img.save(output, format='PNG')
     output.seek(0)
     return send_file(output, mimetype='image/png')
+
+@app.route('/debug')
+def debug():
+    """واجهة لتصحيح الأخطاء"""
+    uid = request.args.get("uid", "9747087237")
+    
+    try:
+        api_url = f"https://info-eight-rho.vercel.app/get?uid={uid}"
+        res = requests.get(api_url, timeout=5)
+        res.raise_for_status()
+        data = res.json()
+        
+        captain_info = data.get("captainBasicInfo", {})
+        account_info = data.get("AccountInfo", {})
+        
+        return {
+            "player_uid": uid,
+            "captain_info_keys": list(captain_info.keys()) if captain_info else [],
+            "account_info_keys": list(account_info.keys()) if account_info else [],
+            "nickname": captain_info.get("nickname"),
+            "liked": captain_info.get("liked"),
+            "level": captain_info.get("level"),
+            "headPic": captain_info.get("headPic"),
+            "AccountName": account_info.get("AccountName"),
+            "AccountLikes": account_info.get("AccountLikes"),
+            "AccountLevel": account_info.get("AccountLevel"),
+            "AccountAvatarId": account_info.get("AccountAvatarId")
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
