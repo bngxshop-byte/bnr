@@ -91,7 +91,7 @@ def generate_avatar_only():
 
     # جلب معلومات اللاعب من API الجديد
     try:
-        api_url = f"https://info-plum-six.vercel.app/get?uid={uid}"
+        api_url = f"https://info-eight-rho.vercel.app/get?uid={uid}"
         res = requests.get(api_url, timeout=5)
         res.raise_for_status()
         data = res.json()
